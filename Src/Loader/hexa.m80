@@ -1,0 +1,92 @@
+; ============================================================================
+;
+; Загрузчик для CAS-файлов (BINARY format) с защитой от AMATASOFT
+;
+; ============================================================================
+ASEG
+        .PHASE 100h
+BEGIN:
+        di
+        lxi     SP, 0F000h
+        ; переносим код защиты
+        lxi     H, PROTCODE
+        lxi     D, 0F6D0h
+        lxi     B, PROTEND-PROTCODE+1
+        call    HLtoDE
+        ; переносим код инициализации
+        lxi     H, JMPCODE      ; адрес кода перехода
+        lxi     D, JMPSTART
+        lxi     B, JMPSIZE
+        call    HLtoDE
+        ; переносим данные
+        lhld    STARTBLOCK
+        mov     D, H            ; DE - адрес начала блока
+        mov     E, L
+        lhld    SIZEBLOCK
+        mov     B, H            ; BC - размер блока
+        mov     C, L
+        lxi     H, BLOCKDATA    ; текущий адрес блока
+        call    HLtoDE
+        lhld    ENTRY
+        jmp     JMPSTART        ; уходим на подпрограмму перехода
+
+; на входе:
+;     HL - источник
+;     DE - получатель
+;     BC - количество
+HLtoDE:
+        dad     B               ; HL += BC - 1
+        xchg
+        dad     B               ; DE += BC - 1
+        xchg
+        dcx     H
+        dcx     D
+  @@copyloop:
+        mov     A, M
+        stax    D
+        dcx     H
+        dcx     D
+        dcx     B
+        mov     A, B
+        ora     C
+        jnz     @@copyloop
+        ret
+
+JMPCODE:
+        .DEPHASE
+
+        .PHASE 0FFF0h
+  JMPSTART:
+        mvi     A, 0FCh         ; отображаем BIOS на 0x0000
+        out     80h
+        ei
+        xra     A
+        out     84h             ; text mode/32 symb/vidoffs:0x0000
+        mvi     A, 0DFh
+        out     86h
+        pchl
+  JMPEND:
+
+        JMPSIZE equ $-JMPSTART
+        .DEPHASE
+
+        .PHASE JMPCODE+JMPSIZE
+
+
+PROTCODE:
+        db 03Eh, 0FFh, 032h, 042h, 0FAh, 021h, 023h, 0F3h, 001h, 0E1h, 0F6h, 0E5h, 0C5h, 02Ah, 01Ch, 035h
+        db 0E9h, 0E1h, 0FEh, 000h, 0C2h, 0D8h, 0F6h, 001h, 006h, 000h, 0CDh, 0CCh, 035h, 0E1h, 0C1h, 0CDh
+        db 0FCh, 034h, 0D0h, 03Eh, 001h, 032h, 0D2h, 002h, 0C3h, 0F8h, 0F6h, 0F6h, 000h, 000h, 000h, 000h
+        db 000h, 000h, 000h, 000h, 000h, 080h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h
+        db 0FFh, 0FFh, 0FFh, 0FFh, 0FFh, 0FFh, 0FFh, 0FFh, 0FFh, 0FFh, 0FFh, 0FFh, 0FFh, 0FFh, 0FFh, 0FFh
+PROTEND:
+
+        ds      200h-6-6-$
+        db 'PK8000'
+STARTBLOCK:     dw 0000h
+ENTRY:          dw 0000h
+SIZEBLOCK:      dw 0000h
+BLOCKDATA:
+
+END BEGIN
+

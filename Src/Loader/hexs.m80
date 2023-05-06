@@ -1,0 +1,137 @@
+; ============================================================================
+;
+; Загрузчик для CAS-файлов (BINARY format) с полной инициализацией BIOS
+;
+; ============================================================================
+ASEG
+        .PHASE 100h
+BEGIN:
+        di
+        xra     A
+        out     84h             ; text mode, width = 32
+        out     86h
+        dcr     A
+        out     80h
+        lxi     SP, 0F200h
+        ; переносим код инициализации в верхние адреса
+        lxi     H, JMPCODE      ; адрес кода перехода
+        lxi     D, JMPSTART
+        lxi     B, JMPSIZE
+        call    HLtoDE
+        ; переносим код программы в ее рабочие адреса
+        lhld    STARTBLOCK
+        mov     D, H            ; DE - адрес начала блока
+        mov     E, L
+        lhld    SIZEBLOCK
+        mov     B, H            ; BC - размер блока
+        mov     C, L
+        lxi     H, BLOCKDATA    ; текущий адрес блока
+        call    HLtoDE
+        lhld    ENTRY
+        jmp     JMPSTART        ; уходим на подпрограмму перехода
+
+; на входе:
+;     HL - источник
+;     DE - получатель
+;     BC - количество
+HLtoDE:
+        dad     B               ; HL += BC - 1
+        xchg
+        dad     B               ; DE += BC - 1
+        xchg
+        dcx     H
+        dcx     D
+  @@copyloop:
+        mov     A, M
+        stax    D
+        dcx     H
+        dcx     D
+        dcx     B
+        mov     A, B
+        ora     C
+        jnz     @@copyloop
+        ret
+
+
+; -------------------------------------------------------------
+; код инициализации и передачи управления загруженной программе
+; -------------------------------------------------------------
+
+JMPCODE:
+        .DEPHASE
+        .PHASE 0F000h
+    JMPSTART:
+        shld    JMPDO+1
+        mvi     A, 81h
+        out     87h
+        mvi     A, 0
+        out     84h             ; mode 1, с видео-озу по адресу 0000h
+        mvi     A, 0FCh
+        out     80h
+        mvi     A, 0DFh
+        out     86h
+        mvi     A, 5
+        out     87h
+        lxi     SP, 0F7FEh
+        lxi     B, 148
+        lxi     D, 0F800h       ; DE = F800
+        lxi     H, 0B3h
+        call    5Ch             ; copy [HL] -> [DE] with count in BC
+        lxi     B, 97
+        lxi     D, 0F8F0h
+        lxi     H, 205h
+        call    5Ch             ; copy [HL] -> [DE] with count in BC
+        ; clear video ram
+        xra     A
+        mov     H, A
+        mov     L, A
+        lxi     B, 4000h
+        call    56h             ; fill [HL] on char A with count in BC
+        ; set color
+        mvi     A, 0Fh
+        sta     0FA24h          ; цвет переднего плана для реж. 0
+        ei
+        ; set video mode 0
+        mvi     A, 0
+        call    286Dh           ; set video mode (mode on A)
+        ; key on
+        call    29A4h           ; включаем строку подсказок клавиш F1-F5
+        mvi     A, 2Ch
+        sta     0FA45h          ; PRNOP
+        ; reset interpritator
+        call    39Eh
+        ; заносим в стек адрес возврата
+        lxi     B, 0
+        push    B
+
+      JMPDO:
+        jmp     0000h
+JMPEND:
+
+        JMPSIZE equ $-JMPSTART
+        .DEPHASE
+
+        .PHASE JMPCODE+JMPSIZE
+
+        ds      200h-6-6-$
+        db 'PK8000'
+
+STARTBLOCK:     dw 0000h
+ENTRY:          dw 0000h
+SIZEBLOCK:      dw 0000h
+BLOCKDATA:
+
+END BEGIN
+
+
+
+
+
+
+
+
+
+JMPEND:
+
+
+

@@ -1,0 +1,79 @@
+; ============================================================================
+;
+; Загрузчик для CAS-файлов (BINARY format)
+;
+; ============================================================================
+ASEG
+        .PHASE 100h
+BEGIN:
+        di
+        lxi     SP, 0F000h
+        ; переносим код инициализации
+        lxi     H, JMPCODE      ; адрес кода перехода
+        lxi     D, JMPSTART
+        lxi     B, JMPSIZE
+        call    HLtoDE
+        ; переносим данные
+        lhld    STARTBLOCK
+        mov     D, H            ; DE - адрес начала блока
+        mov     E, L
+        lhld    SIZEBLOCK
+        mov     B, H            ; BC - размер блока
+        mov     C, L
+        lxi     H, BLOCKDATA    ; текущий адрес блока
+        call    HLtoDE
+        lhld    ENTRY
+        jmp     JMPSTART        ; уходим на подпрограмму перехода
+
+; на входе:
+;     HL - источник
+;     DE - получатель
+;     BC - количество
+HLtoDE:
+        dad     B               ; HL += BC - 1
+        xchg
+        dad     B               ; DE += BC - 1
+        xchg
+        dcx     H
+        dcx     D
+  @@copyloop:
+        mov     A, M
+        stax    D
+        dcx     H
+        dcx     D
+        dcx     B
+        mov     A, B
+        ora     C
+        jnz     @@copyloop
+        ret
+
+JMPCODE:
+        .DEPHASE
+
+        .PHASE 0FFF0h
+        JMPSTART:
+        mvi     A, 0FCh         ; отображаем BIOS на 0x0000
+        out     80h
+        ei
+        xra     A
+        out     84h             ; text mode/32 symb/vidoffs:0x0000
+        mvi     A, 0DFh
+        out     86h
+        pchl
+JMPEND:
+
+        JMPSIZE equ $-JMPSTART
+        .DEPHASE
+
+        .PHASE JMPCODE+JMPSIZE
+
+        ds      180h-6-6-$
+        db 'PK8000'
+
+STARTBLOCK:     dw 0000h
+ENTRY:          dw 0000h
+SIZEBLOCK:      dw 0000h
+BLOCKDATA:
+
+END BEGIN
+

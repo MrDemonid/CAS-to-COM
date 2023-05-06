@@ -1,0 +1,144 @@
+; ============================================================================
+;
+; Загрузчик для CAS-файлов (BAS format)
+;
+; ============================================================================
+ASEG
+        .PHASE 100h
+BEGIN:
+        di
+        xra     A
+        out     84h
+        out     86h
+        dcr     A
+        out     80h
+        lxi     SP, 0F200h
+        ; переносим код инициализации
+        lxi     H, JMPCODE      ; адрес кода перехода
+        lxi     D, JMPSTART
+        lxi     B, BLOCKDATA-JMPCODE ; необходимо, чтобы скопировать ENTRY (адрес конца программы)
+        call    HLtoDE
+        ; переносим данные
+        lxi     D, 4000h
+        lhld    SIZEBLOCK
+        mov     B, H
+        mov     C, L
+        lxi     H, BLOCKDATA    ; текущий адрес блока
+        call    HLtoDE
+        jmp     JMPSTART
+
+; на входе:
+;     HL - источник
+;     DE - получатель
+;     BC - количество
+HLtoDE:
+        dad     B               ; HL += BC - 1
+        xchg
+        dad     B               ; DE += BC - 1
+        xchg
+        dcx     H
+        dcx     D
+  @@copyloop:
+        mov     A, M
+        stax    D
+        dcx     H
+        dcx     D
+        dcx     B
+        mov     A, B
+        ora     C
+        jnz     @@copyloop
+        ret
+
+        ds 160h-$
+
+; -------------------------------------------------------------
+; код инициализации и передачи управления загруженной программе
+; -------------------------------------------------------------
+
+JMPCODE:
+        .DEPHASE
+        .PHASE 0F000h
+    JMPSTART:
+        mvi     A, 81h
+        out     87h
+        mvi     A, 0
+        out     84h
+        mvi     A, 0FCh         ; отображаем BIOS на 0x0000
+        out     80h
+        mvi     A, 0DFh
+        out     86h
+        mvi     A, 5
+        out     87h
+        lxi     SP, 0F7FDh
+        lxi     B, 148
+        lxi     D, 0F800h
+        lxi     H, 0B3h
+        call    5Ch             ; переносим часть подпрограмм BIOS в память F800h
+        lxi     B, 97
+        lxi     D, 0F8F0h
+        lxi     H, 205h
+        call    5Ch             ; переносим область данных BIOS в F8F0h
+        ; clear video ram
+        xra     A
+        mov     H, A
+        mov     L, A
+        lxi     B, 4000h
+        call    56h             ; очищаем видео-ОЗУ
+        ; set color
+        mvi     A, 0Fh
+        sta     0FA24h          ; цвет изображения
+        ; set video mode 0
+        mvi     A, 0
+        call    286Dh           ; установка видеорежима
+        ; key on
+        call    29A4h           ; формирует строку ключей в буфер
+        mvi     A, 2Ch
+        sta     0FA45h          ; PRNOP
+        ; вывод копирайта бейсика
+        mvi     A, 2
+        lxi     H, 1759h
+        call    50h
+        ; reset interpritator
+        call    3A9h            ; инициализация интерпритатора
+        ; настраиваем интерпритатор
+        xra     A
+        call    1B63h
+        lxi     H, 26Dh
+        call    0D93h
+        lxi     H, 0FFFFh
+        shld    0F926h          ; = 0xFFFF - командный режим бейсика
+
+        ; обозначаем конец программы
+        lhld    ENTRY+JMPSTART-JMPCODE ; читаем сохраненное значение из ENTRY
+        shld    0F930h          ; адрес конца бейсик-программы
+        shld    0F932h          ; адрес начала массивов
+        shld    0F934h          ; адрес начала свободной памяти
+
+        ; заносим в буфер клавиатуры команду для интерпритатора
+        lhld    0FA2Ch          ; адрес чтения из буфера клавиатуры
+        mvi     M, 'R'
+        inx     H
+        mvi     M, 'U'
+        inx     H
+        mvi     M, 'N'
+        inx     H
+        mvi     M, 0Dh
+        inx     H
+        shld    0FA2Ah          ; нач. свободного места в буфере клавиатуры (OUTBUF)
+        jmp     30Dh
+
+        JMPSIZE equ $-JMPSTART
+        .DEPHASE
+
+        .PHASE JMPCODE+JMPSIZE
+
+        ds      200h-6-6-$
+
+        db 'PK8000'
+
+STARTBLOCK:     dw 0000h        ; unused
+ENTRY:          dw 0000h        ; адрес свободной памяти интерпритатора
+SIZEBLOCK:      dw 0000h        ; размер программы, выровненный на 256 байт
+BLOCKDATA:
+
+END BEGIN
