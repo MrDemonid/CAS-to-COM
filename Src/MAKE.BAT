@@ -20,10 +20,10 @@ SET WATCOM=%DEV%:\WATCOM
 SET EDPATH=%DEV%:\WATCOM\EDDAT
 
 :: clear
-del ..\EXE\CAS2COM.EXE
+del ..\BIN\CAS2COM.EXE
 del *.obj
 
 cls
-wcl386 -bt=nt -l=nt -e=25 -ei -q -od -d0 -6r -mf -zw CAS2COM.C -fe=..\EXE\CAS2COM.EXE
+wcl386 -bt=nt -l=nt -e=25 -ei -q -od -d0 -6r -mf -zw CAS2COM.C -fe=..\BIN\CAS2COM.EXE
 
 del *.obj
