@@ -22,10 +22,11 @@
 /*
   тип данных CAS-файла
 */
-#define CAS_BINARY      0   // бинарник
-#define CAS_BINPROT     1   // бинарник с защитой от AMATASOFT
-#define CAS_BASIC       2   // бейсик-программа, сохранённая по CSAVE
-#define CAS_TEXT        3   // бейсик-программа, сохранённая по SAVE (простой текст)
+#define CAS_BINARY      0   // бинарник (просто слепок памяти)
+#define CAS_EXECUTABLE  1   // бинарник (выполняемый)
+#define CAS_BINPROT     2   // бинарник с защитой от AMATASOFT
+#define CAS_BASIC       3   // бейсик-программа, сохранённая по CSAVE
+#define CAS_TEXT        4   // бейсик-программа, сохранённая по SAVE (простой текст)
 
 #define MAX_BSIZE  0x7F00   // макс. размер кода бейсик программ 0xBF00-0x4000
 
@@ -55,7 +56,7 @@
 */
 typedef struct
 {
-    unsigned char  type;                // тип файла: CAS_BINARY|CAS_BASIC|CAS_TEXT
+    unsigned char  type;                // тип файла: CAS_BINARY|CAS_EXECUTABLE|CAS_BINPROT|CAS_BASIC|CAS_TEXT
     unsigned char  name[16];            // имя файла на ленте
     unsigned char  fname[16];           // имя для записи на диск
     unsigned long  size;                // размер файла
@@ -65,7 +66,7 @@ typedef struct
     char          *data;
 } CAS;
 
-char *ext[] = {".COM", ".COM", ".COM", ".BAS"};
+char *ext[] = {".BIN", ".COM", ".COM", ".COM", ".BAS"};
 char *err[] = {"bad file format",
                "file is protect",
                "unexpected end of file",
@@ -99,6 +100,7 @@ char KOI2RUS[64]= {'ю','а','б','ц','д','е','ф','г','х','и','й','к','л','м','н','
 
 
 char bSafeCode;
+char bForceBinary;
 char sFileName[256];
 
 
@@ -207,7 +209,7 @@ int cas_ReadBData(FILE *f, CAS *cas)
     cas->stop  = fgetw(f);
     cas->entry = fgetw(f);
 
-    if (cas->start < 0x4000 || cas->start >= cas->stop)
+    if (cas->type != CAS_BINARY && cas->start < 0x4000 || cas->start >= cas->stop)
         return ERR_BAD_FORMAT;
 
     if (cas->start >= 0xF635)
@@ -447,7 +449,7 @@ CAS *cas_Open(char *name)
                 if (!memcmp(buff, BIN, 10))
                 {
                     // это бинарные данные, считываем имя файла
-                    cas->type = CAS_BINARY;
+                    cas->type = bForceBinary ? CAS_BINARY : CAS_EXECUTABLE;
                     fread(cas->name, 1, 6, f);
                     cas_ToName(cas);
                     printf("FOUND:  %s (BINARY)\n",cas->name);
@@ -543,6 +545,13 @@ int com_Create(CAS *cas)
         {
             case CAS_BINARY:
                 {
+                    head = NULL;
+                    size = cas->stop-cas->start;
+                    hsize = 0;
+                    break;
+                }
+            case CAS_EXECUTABLE:
+                {
                     if (bSafeCode)
                     {
                         hsize = sizeof(BLOADS);
@@ -591,14 +600,18 @@ int com_Create(CAS *cas)
         }
         // сохраняем данные
         printf("WRITE:  %u Bytes data\n", size);
-        if (!code)
+        if (code == 0)
             if (fwrite(cas->data, 1, size, f) != size)
                 code = ERR_WRITE_FILE;
-        if (!code)
+        if (code == 0)
         {
-            size += hsize;
-            if (size % 128)
-                fwrite(fill, 1, 128 - (size % 128), f);
+            if (cas->type != CAS_BINARY) {
+                // для всех, кроме бинарников, выравниваем на границу 128 байт (размер сектора)
+                memset(fill, 0, sizeof(fill));
+                size += hsize;
+                if (size % 128)
+                    fwrite(fill, 1, 128 - (size % 128), f);
+            }
         }
         fclose(f);
     } else {
@@ -620,6 +633,7 @@ void do_usage(void)
     printf("  options:\n");
     printf("    h|? - this help\n");
     printf("    s   - use safety running\n");
+    printf("    b   - make output binary file (only for BSAVE files format)\n");
 }
 
 char do_argv(int argc, char *argv[])
@@ -633,6 +647,7 @@ char do_argv(int argc, char *argv[])
     }
 
     bSafeCode = 0;
+    bForceBinary = 0;
     sFileName[0] = 0;
     i = 1;
     while (i < argc)
@@ -646,6 +661,10 @@ char do_argv(int argc, char *argv[])
                     bSafeCode = 1;
                     break;
                 }
+                case 'b':
+                case 'B':
+                    bForceBinary = 1;
+                    break;
                 case 'H':
                 case 'h':
                 case '?': {
@@ -670,7 +689,7 @@ int main(int argc, char* argv[])
 {
     CAS *cas;
 
-    printf("CAS to COM converter  v1.5\n");
+    printf("CAS to COM converter  v1.6\n");
     while (kbhit()) getch();
 
     if (!do_argv(argc, argv))
